@@ -7,10 +7,17 @@ import java.net.URL
 interface SidecarRepository {
   fun findAll(): Collection<SidecarStored>
 
-  fun save(libraryId: String, sidecar: Sidecar)
+  fun save(
+    libraryId: String,
+    sidecar: Sidecar,
+  )
 
-  fun deleteByLibraryIdAndUrls(libraryId: String, urls: Collection<URL>)
+  fun deleteByLibraryIdAndUrls(
+    libraryId: String,
+    urls: Collection<URL>,
+  )
+
   fun deleteByLibraryId(libraryId: String)
 
-  fun countGroupedByLibraryName(): Map<String, Int>
+  fun countGroupedByLibraryId(): Map<String, Int>
 }

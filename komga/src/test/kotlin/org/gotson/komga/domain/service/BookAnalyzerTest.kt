@@ -11,14 +11,12 @@ import org.gotson.komga.domain.model.Media
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.infrastructure.configuration.KomgaProperties
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.core.io.ClassPathResource
-import org.springframework.test.context.junit.jupiter.SpringExtension
 import java.nio.file.Path
 import java.time.LocalDateTime
 import kotlin.io.path.extension
@@ -27,12 +25,10 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.name
 import kotlin.io.path.toPath
 
-@ExtendWith(SpringExtension::class)
 @SpringBootTest
 class BookAnalyzerTest(
   @Autowired private val komgaProperties: KomgaProperties,
 ) {
-
   @SpykBean
   private lateinit var bookAnalyzer: BookAnalyzer
 
@@ -133,7 +129,19 @@ class BookAnalyzerTest(
 
     assertThat(media.mediaType).isEqualTo("application/epub+zip")
     assertThat(media.status).isEqualTo(Media.Status.READY)
-    assertThat(media.pages).hasSize(2)
+    assertThat(media.pages).hasSize(0)
+  }
+
+  @Test
+  fun `given broken epub archive when analyzing then media status is ERROR`() {
+    val file = ClassPathResource("archives/zip-as-epub.epub")
+    val book = Book("book", file.url, LocalDateTime.now())
+
+    val media = bookAnalyzer.analyze(book, false)
+
+    assertThat(media.mediaType).isEqualTo("application/zip")
+    assertThat(media.status).isEqualTo(Media.Status.ERROR)
+    assertThat(media.pages).hasSize(0)
   }
 
   @Test
@@ -169,8 +177,12 @@ class BookAnalyzerTest(
     assertThat(hashedMedia.pages.takeLast(komgaProperties.pageHashing).map { it.fileHash })
       .hasSize(komgaProperties.pageHashing)
       .containsOnly("hashed")
-    assertThat(hashedMedia.pages.drop(komgaProperties.pageHashing).dropLast(komgaProperties.pageHashing).map { it.fileHash })
-      .hasSize(30 - (komgaProperties.pageHashing * 2))
+    assertThat(
+      hashedMedia.pages
+        .drop(komgaProperties.pageHashing)
+        .dropLast(komgaProperties.pageHashing)
+        .map { it.fileHash },
+    ).hasSize(30 - (komgaProperties.pageHashing * 2))
       .containsOnly("")
   }
 
@@ -198,9 +210,10 @@ class BookAnalyzerTest(
 
     val mediaType = "image/${directory.fileName.extension}"
 
-    val hashes = files.map {
-      bookAnalyzer.hashPage(BookPage(it.name, mediaType = mediaType), it.inputStream().readBytes())
-    }
+    val hashes =
+      files.map {
+        bookAnalyzer.hashPage(BookPage(it.name, mediaType = mediaType), it.inputStream().readBytes())
+      }
 
     assertThat(hashes.first()).isEqualTo(hashes.last())
   }

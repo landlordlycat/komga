@@ -1,17 +1,29 @@
 package org.gotson.komga.infrastructure.security
 
-import mu.KotlinLogging
-import org.gotson.komga.domain.model.ROLE_ADMIN
-import org.gotson.komga.domain.model.ROLE_USER
-import org.gotson.komga.infrastructure.configuration.KomgaProperties
+import io.github.oshai.kotlinlogging.KotlinLogging
+import jakarta.servlet.Filter
+import org.gotson.komga.domain.model.UserRoles
+import org.gotson.komga.infrastructure.configuration.KomgaSettingsProvider
+import org.gotson.komga.infrastructure.security.apikey.ApiKeyAuthenticationFilter
+import org.gotson.komga.infrastructure.security.apikey.ApiKeyAuthenticationProvider
+import org.gotson.komga.infrastructure.security.apikey.HeaderApiKeyAuthenticationConverter
+import org.gotson.komga.infrastructure.security.apikey.UriRegexApiKeyAuthenticationConverter
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest
 import org.springframework.boot.actuate.health.HealthEndpoint
 import org.springframework.context.annotation.Bean
-import org.springframework.security.config.annotation.method.configuration.EnableGlobalMethodSecurity
+import org.springframework.context.annotation.Configuration
+import org.springframework.core.annotation.Order
+import org.springframework.security.authentication.AuthenticationEventPublisher
+import org.springframework.security.authentication.AuthenticationManager
+import org.springframework.security.authentication.ProviderManager
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity
+import org.springframework.security.config.annotation.web.invoke
+import org.springframework.security.config.http.SessionCreationPolicy
 import org.springframework.security.core.session.SessionRegistry
 import org.springframework.security.core.userdetails.UserDetailsService
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest
@@ -20,85 +32,95 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException
 import org.springframework.security.oauth2.core.oidc.user.OidcUser
 import org.springframework.security.oauth2.core.user.OAuth2User
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource
 import org.springframework.security.web.authentication.rememberme.TokenBasedRememberMeServices
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher
 
 private val logger = KotlinLogging.logger {}
 
+@Configuration
 @EnableWebSecurity
-@EnableGlobalMethodSecurity(prePostEnabled = true)
+@EnableMethodSecurity(prePostEnabled = true)
 class SecurityConfiguration(
-  private val komgaProperties: KomgaProperties,
-  private val komgaUserDetailsLifecycle: UserDetailsService,
+  private val komgaSettingsProvider: KomgaSettingsProvider,
+  private val komgaUserDetailsService: UserDetailsService,
+  private val apiKeyAuthenticationProvider: ApiKeyAuthenticationProvider,
   private val oauth2UserService: OAuth2UserService<OAuth2UserRequest, OAuth2User>,
   private val oidcUserService: OAuth2UserService<OidcUserRequest, OidcUser>,
   private val sessionCookieName: String,
   private val userAgentWebAuthenticationDetailsSource: WebAuthenticationDetailsSource,
-  private val sessionRegistry: SessionRegistry,
+  private val theSessionRegistry: SessionRegistry,
+  private val opdsAuthenticationEntryPoint: OpdsAuthenticationEntryPoint,
+  private val authenticationEventPublisher: AuthenticationEventPublisher,
+  private val tokenEncoder: TokenEncoder,
   clientRegistrationRepository: InMemoryClientRegistrationRepository?,
 ) {
-
   private val oauth2Enabled = clientRegistrationRepository != null
 
+  @Order(1)
   @Bean
   fun filterChain(http: HttpSecurity): SecurityFilterChain {
     http
       .cors {}
       .csrf { it.disable() }
-      .authorizeRequests {
+      .securityMatchers {
+        // only apply security to those endpoints
+        it.requestMatchers(
+          "/api/**",
+          "/opds/**",
+          "/sse/**",
+          "/oauth2/authorization/**",
+          "/login/oauth2/code/**",
+        )
+        it.requestMatchers(EndpointRequest.toAnyEndpoint())
+      }.authorizeHttpRequests {
         // allow unauthorized access to actuator health endpoint
         // this will only show limited details as `management.endpoint.health.show-details` is set to `when-authorized`
         it.requestMatchers(EndpointRequest.to(HealthEndpoint::class.java)).permitAll()
         // restrict all other actuator endpoints to ADMIN only
-        it.requestMatchers(EndpointRequest.toAnyEndpoint()).hasRole(ROLE_ADMIN)
+        it.requestMatchers(EndpointRequest.toAnyEndpoint()).hasRole(UserRoles.ADMIN.name)
 
-        it.mvcMatchers(
-          // to claim server before any account is created
-          "/api/v1/claim",
-          // used by webui
-          "/api/v1/oauth2/providers",
-          "/set-cookie",
-          "/error**",
-          "/css/**",
-          "/img/**",
-          "/js/**",
-          "/favicon.ico",
-          "/favicon-16x16.png",
-          "/favicon-32x32.png",
-          "/mstile-144x144.png",
-          "/apple-touch-icon.png",
-          "/apple-touch-icon-180x180.png",
-          "/android-chrome-192x192.png",
-          "/android-chrome-512x512.png",
-          "/manifest.json",
-          "/",
-          "/index.html",
-        ).permitAll()
+        it
+          .requestMatchers(
+            // to claim server before any account is created
+            "/api/v1/claim",
+            // used by webui
+            "/api/v1/oauth2/providers",
+            // epub resources - fonts are always requested anonymously, so we check for authorization within the controller method directly
+            "/api/v1/books/{bookId}/resource/**",
+            // OPDS authentication document
+            "/opds/v2/auth",
+            // KOReader user creation
+            "/koreader/users/create",
+          ).permitAll()
 
         // all other endpoints are restricted to authenticated users
-        it.mvcMatchers(
-          "/api/**",
-          "/opds/**",
-          "/sse/**",
-        ).hasRole(ROLE_USER)
-      }
-      .headers {
-        it.cacheControl().disable() // headers are set in WebMvcConfiguration
-      }
+        it
+          .requestMatchers(
+            "/api/**",
+            "/opds/**",
+            "/sse/**",
+          ).authenticated()
+      }.headers { headersConfigurer ->
+        headersConfigurer.cacheControl { it.disable() } // headers are set in WebMvcConfiguration
+        headersConfigurer.frameOptions { it.sameOrigin() } // for epubreader iframes
+      }.userDetailsService(komgaUserDetailsService)
       .httpBasic {
         it.authenticationDetailsSource(userAgentWebAuthenticationDetailsSource)
-      }
-      .logout {
+      }.logout {
         it.logoutUrl("/api/logout")
         it.deleteCookies(sessionCookieName)
         it.invalidateHttpSession(true)
-      }
-      .sessionManagement { session ->
+      }.sessionManagement { session ->
+        session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
         session.sessionConcurrency {
-          it.sessionRegistry(sessionRegistry)
+          it.sessionRegistry(theSessionRegistry)
           it.maximumSessions(-1)
         }
+      }.exceptionHandling {
+        it.defaultAuthenticationEntryPointFor(opdsAuthenticationEntryPoint, AntPathRequestMatcher("/opds/v2/**"))
       }
 
     if (oauth2Enabled) {
@@ -108,34 +130,125 @@ class SecurityConfiguration(
           it.oidcUserService(oidcUserService)
         }
         oauth2.authenticationDetailsSource(userAgentWebAuthenticationDetailsSource)
-        oauth2.loginPage("/login")
+        oauth2
+          .loginPage("/login")
           .defaultSuccessUrl("/?server_redirect=Y", true)
           .failureHandler { request, response, exception ->
-            val errorMessage = when (exception) {
-              is OAuth2AuthenticationException -> exception.error.errorCode
-              else -> exception.message
-            }
+            val errorMessage =
+              when (exception) {
+                is OAuth2AuthenticationException -> exception.error.errorCode
+                else -> exception.message
+              }
             val url = "/login?server_redirect=Y&error=$errorMessage"
             SimpleUrlAuthenticationFailureHandler(url).onAuthenticationFailure(request, response, exception)
           }
+        oauth2.redirectionEndpoint {
+        }
       }
     }
 
-    if (!komgaProperties.rememberMe.key.isNullOrBlank()) {
-      logger.info { "RememberMe is active, validity: ${komgaProperties.rememberMe.validity}" }
+    http
+      .rememberMe {
+        it.rememberMeServices(
+          TokenBasedRememberMeServices(komgaSettingsProvider.rememberMeKey, komgaUserDetailsService).apply {
+            setTokenValiditySeconds(komgaSettingsProvider.rememberMeDuration.inWholeSeconds.toInt())
+            setAuthenticationDetailsSource(userAgentWebAuthenticationDetailsSource)
+          },
+        )
+      }
 
-      http
-        .rememberMe {
-          it.rememberMeServices(
-            TokenBasedRememberMeServices(komgaProperties.rememberMe.key, komgaUserDetailsLifecycle).apply {
-              setTokenValiditySeconds(komgaProperties.rememberMe.validity.seconds.toInt())
-              setAlwaysRemember(true)
-              setAuthenticationDetailsSource(userAgentWebAuthenticationDetailsSource)
-            },
-          )
-        }
+    return http.build()
+  }
+
+  @Bean
+  fun koboFilterChain(
+    http: HttpSecurity,
+    encoder: PasswordEncoder,
+  ): SecurityFilterChain {
+    http {
+      cors {}
+
+      csrf { disable() }
+      formLogin { disable() }
+      httpBasic { disable() }
+      logout { disable() }
+
+      securityMatcher("/kobo/**")
+      authorizeHttpRequests {
+        authorize(anyRequest, hasRole(UserRoles.KOBO_SYNC.name))
+      }
+
+      headers {
+        cacheControl { disable() }
+      }
+
+      // somehow the Kobo gets a Json issue when receiving the session ID in a cookie header
+      // this happens when requesting /v1/user/profile
+      // Kobo error: packetdump.warning) Invalid JSON script: QVariant(Invalid) "illegal value"
+//      sessionManagement {
+//        sessionCreationPolicy = SessionCreationPolicy.IF_REQUIRED
+//        sessionConcurrency {
+//          sessionRegistry = theSessionRegistry
+//          maximumSessions = -1
+//        }
+//      }
+
+      addFilterBefore<AnonymousAuthenticationFilter>(koboAuthenticationFilter())
     }
 
     return http.build()
   }
+
+  @Bean
+  fun kosyncFilterChain(
+    http: HttpSecurity,
+    encoder: PasswordEncoder,
+  ): SecurityFilterChain {
+    http {
+      cors {}
+
+      csrf { disable() }
+      formLogin { disable() }
+      httpBasic { disable() }
+      logout { disable() }
+
+      securityMatcher("/koreader/**")
+      authorizeHttpRequests {
+        authorize(anyRequest, hasRole(UserRoles.KOREADER_SYNC.name))
+      }
+
+      headers {
+        cacheControl { disable() }
+      }
+
+      sessionManagement {
+        sessionCreationPolicy = SessionCreationPolicy.IF_REQUIRED
+        sessionConcurrency {
+          sessionRegistry = theSessionRegistry
+          maximumSessions = -1
+        }
+      }
+
+      addFilterBefore<AnonymousAuthenticationFilter>(kosyncAuthenticationFilter())
+    }
+
+    return http.build()
+  }
+
+  fun koboAuthenticationFilter(): Filter =
+    ApiKeyAuthenticationFilter(
+      apiKeyAuthenticationProvider(),
+      UriRegexApiKeyAuthenticationConverter(Regex("""\/kobo\/([\w-]+)"""), tokenEncoder, userAgentWebAuthenticationDetailsSource),
+    )
+
+  fun kosyncAuthenticationFilter(): Filter =
+    ApiKeyAuthenticationFilter(
+      apiKeyAuthenticationProvider(),
+      HeaderApiKeyAuthenticationConverter("X-Auth-User", tokenEncoder, userAgentWebAuthenticationDetailsSource),
+    )
+
+  fun apiKeyAuthenticationProvider(): AuthenticationManager =
+    ProviderManager(apiKeyAuthenticationProvider).apply {
+      setAuthenticationEventPublisher(authenticationEventPublisher)
+    }
 }

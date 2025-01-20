@@ -1,8 +1,8 @@
 package org.gotson.komga.infrastructure.validation
 
-import javax.validation.Constraint
-import javax.validation.ConstraintValidator
-import javax.validation.ConstraintValidatorContext
+import jakarta.validation.Constraint
+import jakarta.validation.ConstraintValidator
+import jakarta.validation.ConstraintValidatorContext
 import kotlin.reflect.KClass
 
 @Constraint(validatedBy = [BlankValidator::class])
@@ -15,8 +15,10 @@ annotation class Blank(
 )
 
 class BlankValidator : ConstraintValidator<Blank, String> {
-
-  override fun isValid(value: String?, context: ConstraintValidatorContext?): Boolean {
+  override fun isValid(
+    value: String?,
+    context: ConstraintValidatorContext?,
+  ): Boolean {
     if (value == null) return false
     return value.isBlank()
   }

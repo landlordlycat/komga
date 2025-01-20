@@ -9,8 +9,11 @@
       <v-toolbar-title v-if="readList">
         <span>{{ readList.name }}</span>
         <v-chip label class="mx-4">
-          <span style="font-size: 1.1rem">{{ readList.bookIds.length }}</span>
+          <span style="font-size: 1.1rem">{{ totalElements }}</span>
         </v-chip>
+        <span v-if="readList.ordered"
+              class="font-italic text-overline"
+        >({{ $t('browse_readlist.manual_ordering') }})</span>
       </v-toolbar-title>
 
       <v-spacer/>
@@ -44,11 +47,13 @@
     <multi-select-bar
       v-model="selectedBooks"
       kind="books"
+      :oneshots="selectedOneshots"
       show-select-all
       @unselect-all="selectedBooks = []"
       @select-all="selectedBooks = books"
       @mark-read="markSelectedRead"
       @mark-unread="markSelectedUnread"
+      @add-to-collection="addToCollection"
       @add-to-readlist="addToReadList"
       @edit="editMultipleBooks"
       @bulk-edit="bulkEditMultipleBooks"
@@ -131,10 +136,10 @@
 
         <item-browser
           :items.sync="books"
-          :item-context="[ItemContext.SHOW_SERIES]"
+          :item-context="itemContext"
           :selected.sync="selectedBooks"
           :edit-function="isAdmin ? editSingleBook : undefined"
-          :draggable="editElements"
+          :draggable="editElements && readList.ordered"
           :deletable="editElements"
         />
 
@@ -173,7 +178,7 @@ import ReadMore from '@/components/ReadMore.vue'
 import FilterDrawer from '@/components/FilterDrawer.vue'
 import FilterPanels from '@/components/FilterPanels.vue'
 import FilterList from '@/components/FilterList.vue'
-import {ReadStatus, replaceCompositeReadStatus} from '@/types/enum-books'
+import {ReadStatus} from '@/types/enum-books'
 import {authorRoles} from '@/types/author-roles'
 import {LibraryDto} from '@/types/komga-libraries'
 import {mergeFilterParams, toNameValue} from '@/functions/filter'
@@ -182,6 +187,9 @@ import {readListFileUrl} from '@/functions/urls'
 import {ItemContext} from '@/types/items'
 import PageSizeSelect from '@/components/PageSizeSelect.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import {ReadListDto, ReadListUpdateDto} from '@/types/komga-readlists'
+import {Oneshot} from '@/types/komga-series'
+import {FiltersActive, FiltersOptions, NameValue} from '@/types/filter'
 
 export default Vue.extend({
   name: 'BrowseReadList',
@@ -275,6 +283,10 @@ export default Vue.extend({
     next()
   },
   computed: {
+    itemContext(): ItemContext[] {
+      if (this.readList?.ordered === false) return [ItemContext.SHOW_SERIES, ItemContext.RELEASE_DATE]
+      return [ItemContext.SHOW_SERIES]
+    },
     paginationVisible(): number {
       switch (this.$vuetify.breakpoint.name) {
         case 'xs':
@@ -292,7 +304,7 @@ export default Vue.extend({
       return {
         readStatus: {
           values: [
-            {name: this.$i18n.t('filter.unread').toString(), value: ReadStatus.UNREAD_AND_IN_PROGRESS},
+            {name: this.$i18n.t('filter.unread').toString(), value: ReadStatus.UNREAD},
             {name: this.$t('filter.in_progress').toString(), value: ReadStatus.IN_PROGRESS},
             {name: this.$t('filter.read').toString(), value: ReadStatus.READ},
           ],
@@ -327,6 +339,9 @@ export default Vue.extend({
     },
     filterActive(): boolean {
       return Object.keys(this.filters).some(x => this.filters[x].length !== 0)
+    },
+    selectedOneshots(): boolean {
+      return this.selectedBooks.every(b => b.oneshot)
     },
   },
   methods: {
@@ -451,7 +466,7 @@ export default Vue.extend({
         }))
       })
 
-      const booksPage = await this.$komgaReadLists.getBooks(readListId, pageRequest, this.filters.library, replaceCompositeReadStatus(this.filters.readStatus), this.filters.tag, authorsFilter)
+      const booksPage = await this.$komgaReadLists.getBooks(readListId, pageRequest, this.filters.library, this.filters.readStatus, this.filters.tag, authorsFilter)
 
       this.totalPages = booksPage.totalPages
       this.totalElements = booksPage.totalElements
@@ -464,11 +479,20 @@ export default Vue.extend({
     reloadPage: throttle(function (this: any) {
       this.loadPage(this.readListId, this.page)
     }, 1000),
-    editSingleBook(book: BookDto) {
-      this.$store.dispatch('dialogUpdateBooks', book)
+    async editSingleBook(book: BookDto) {
+      if (book.oneshot) {
+        const series = (await this.$komgaSeries.getOneSeries(book.seriesId))
+        this.$store.dispatch('dialogUpdateOneshots', {series: series, book: book})
+      } else
+        this.$store.dispatch('dialogUpdateBooks', book)
     },
-    editMultipleBooks() {
-      this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
+    async editMultipleBooks() {
+      if (this.selectedBooks.every(b => b.oneshot)) {
+        const series = await Promise.all(this.selectedBooks.map(b => this.$komgaSeries.getOneSeries(b.seriesId)))
+        const oneshots = this.selectedBooks.map((b, index) => ({series: series[index], book: b} as Oneshot))
+        this.$store.dispatch('dialogUpdateOneshots', oneshots)
+      } else
+        this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
     },
     bulkEditMultipleBooks() {
       this.$store.dispatch('dialogUpdateBulkBooks', this.selectedBooks)
@@ -488,8 +512,11 @@ export default Vue.extend({
       ))
       this.selectedBooks = []
     },
+    addToCollection() {
+      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedBooks.map(b => b.seriesId))
+    },
     addToReadList() {
-      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks)
+      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks.map(b => b.id))
     },
     async startEditElements() {
       this.filters = {}

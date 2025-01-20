@@ -10,6 +10,7 @@
           @scroll-changed="(percent) => scrollChanged(readListsLoaders[index], percent)"
         >
           <template v-slot:prepend>
+            <slot name="prepend" v-bind:readlist="r"/>
             <router-link class="text-overline"
                          :to="{name: 'browse-readlist', params: {readListId: r.id}}"
             >{{ $t('readlists_expansion_panel.manage_readlist') }}
@@ -38,6 +39,7 @@ import {BookDto} from '@/types/komga-books'
 import {ContextOrigin} from '@/types/context'
 import {ItemContext} from '@/types/items'
 import {PageLoader} from '@/types/pageLoader'
+import {ReadListDto} from '@/types/komga-readlists'
 
 export default Vue.extend({
   name: 'ReadListsExpansionPanels',

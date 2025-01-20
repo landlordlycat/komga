@@ -1,9 +1,9 @@
 package org.gotson.komga.interfaces.api.rest.dto
 
-import javax.validation.Constraint
-import javax.validation.ConstraintValidator
-import javax.validation.ConstraintValidatorContext
-import javax.validation.constraints.Positive
+import jakarta.validation.Constraint
+import jakarta.validation.ConstraintValidator
+import jakarta.validation.ConstraintValidatorContext
+import jakarta.validation.constraints.Positive
 import kotlin.reflect.KClass
 
 @ReadProgressUpdateDtoConstraint
@@ -22,8 +22,12 @@ annotation class ReadProgressUpdateDtoConstraint(
 )
 
 class ReadProgressUpdateDtoValidator : ConstraintValidator<ReadProgressUpdateDtoConstraint, ReadProgressUpdateDto> {
-  override fun isValid(value: ReadProgressUpdateDto?, context: ConstraintValidatorContext?): Boolean =
-    value != null && (
-      value.page != null || (value.completed != null && value.completed)
+  override fun isValid(
+    value: ReadProgressUpdateDto?,
+    context: ConstraintValidatorContext?,
+  ): Boolean =
+    value != null &&
+      (
+        value.page != null || (value.completed != null && value.completed)
       )
 }

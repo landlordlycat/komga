@@ -20,6 +20,7 @@ export const persistedModule: Module<any, any> = {
       animations: true,
       background: '',
     },
+    epubreader: {},
     browsingPageSize: undefined as unknown as number,
     collection: {
       filter: {},
@@ -28,14 +29,37 @@ export const persistedModule: Module<any, any> = {
       filter: {},
     },
     library: {
+      // DEPRECATED: this is the old filter, before criteria-dsl was introduced
       filter: {},
+      // this is the criteria-dsl filter, incompatible with the previous one
+      filterDsl: {},
+      filterMode: {},
       sort: {},
       route: {},
     },
     importPath: '',
-     duplicatesNewPageSize: 10,
+    duplicatesNewPageSize: 10,
+    rememberMe: false,
   },
   getters: {
+    getLocaleFirstDay: (state) => () => {
+      try {
+        // @ts-ignore
+        const loc = new Intl.Locale(state.locale)
+        try {
+          // @ts-ignore
+          return loc.getWeekInfo().firstDay
+        } catch (e) {
+        }
+        try {
+          // @ts-ignore
+          return loc.weekInfo.firstDay
+        } catch (e) {
+        }
+      } catch (e) {
+      }
+      return 1
+    },
     getCollectionFilter: (state) => (id: string) => {
       return state.collection.filter[id]
     },
@@ -43,7 +67,10 @@ export const persistedModule: Module<any, any> = {
       return state.readList.filter[id]
     },
     getLibraryFilter: (state) => (id: string) => {
-      return state.library.filter[id]
+      return state.library.filterDsl[id]
+    },
+    getLibraryFilterMode: (state) => (id: string) => {
+      return state.library.filterMode[id]
     },
     getLibrarySort: (state) => (id: string) => {
       return state.library.sort[id]
@@ -86,6 +113,9 @@ export const persistedModule: Module<any, any> = {
     setWebreaderBackground(state, val) {
       state.webreader.background = val
     },
+    setEpubreaderSettings(state, val) {
+      state.epubreader = val
+    },
     setBrowsingPageSize(state, val) {
       state.browsingPageSize = val
     },
@@ -96,7 +126,10 @@ export const persistedModule: Module<any, any> = {
       state.readList.filter[id] = filter
     },
     setLibraryFilter(state, {id, filter}) {
-      state.library.filter[id] = filter
+      state.library.filterDsl[id] = filter
+    },
+    setLibraryFilterMode(state, {id, filterMode: filterMode}) {
+      state.library.filterMode[id] = filterMode
     },
     setLibrarySort(state, {id, sort}) {
       state.library.sort[id] = sort
@@ -109,6 +142,9 @@ export const persistedModule: Module<any, any> = {
     },
     setDuplicatesNewPageSize(state, val) {
       state.duplicatesNewPageSize = val
+    },
+    setRememberMe(state, val) {
+      state.rememberMe = val
     },
   },
 }

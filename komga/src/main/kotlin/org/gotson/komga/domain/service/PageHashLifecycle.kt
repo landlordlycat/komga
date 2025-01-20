@@ -1,12 +1,11 @@
 package org.gotson.komga.domain.service
 
-import mu.KotlinLogging
-import org.gotson.komga.domain.model.BookPageContent
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gotson.komga.domain.model.BookPageNumbered
 import org.gotson.komga.domain.model.Library
 import org.gotson.komga.domain.model.MediaType
-import org.gotson.komga.domain.model.PageHash
 import org.gotson.komga.domain.model.PageHashKnown
+import org.gotson.komga.domain.model.TypedBytes
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.MediaRepository
 import org.gotson.komga.domain.persistence.PageHashRepository
@@ -24,43 +23,36 @@ class PageHashLifecycle(
   private val bookRepository: BookRepository,
   private val komgaProperties: KomgaProperties,
 ) {
+  private val hashableMediaTypes = listOf(MediaType.ZIP.type)
 
-  private val hashableMediaTypes = listOf(MediaType.ZIP.value)
-
-  /**
-   * @return a Collection of Pair of BookId/SeriesId
-   */
-  fun getBookAndSeriesIdsWithMissingPageHash(library: Library): Collection<Pair<String, String>> =
-    if (library.hashPages)
-      mediaRepository.findAllBookAndSeriesIdsByLibraryIdAndMediaTypeAndWithMissingPageHash(library.id, hashableMediaTypes, komgaProperties.pageHashing)
+  fun getBookIdsWithMissingPageHash(library: Library): Collection<String> =
+    if (library.hashPages) {
+      mediaRepository
+        .findAllBookIdsByLibraryIdAndMediaTypeAndWithMissingPageHash(library.id, hashableMediaTypes, komgaProperties.pageHashing)
         .also { logger.info { "Found ${it.size} books with missing page hash" } }
-    else {
+    } else {
       logger.info { "Page hashing is not enabled, skipping" }
       emptyList()
     }
 
-  fun getPage(pageHash: PageHash, resizeTo: Int? = null): BookPageContent? {
-    val match = pageHashRepository.findMatchesByHash(pageHash, null, Pageable.ofSize(1)).firstOrNull() ?: return null
+  fun getPage(
+    pageHash: String,
+    resizeTo: Int? = null,
+  ): TypedBytes? {
+    val match = pageHashRepository.findMatchesByHash(pageHash, Pageable.ofSize(1)).firstOrNull() ?: return null
     val book = bookRepository.findByIdOrNull(match.bookId) ?: return null
 
     return bookLifecycle.getBookPage(book, match.pageNumber, resizeTo = resizeTo)
   }
 
-  fun getBookPagesToDeleteAutomatically(library: Library): Map<String, Collection<BookPageNumbered>> =
-    pageHashRepository.findMatchesByKnownHashAction(listOf(PageHashKnown.Action.DELETE_AUTO), library.id)
+  fun getBookPagesToDeleteAutomatically(library: Library): Map<String, Collection<BookPageNumbered>> = pageHashRepository.findMatchesByKnownHashAction(listOf(PageHashKnown.Action.DELETE_AUTO), library.id)
 
   fun createOrUpdate(pageHash: PageHashKnown) {
-    if (pageHash.action == PageHashKnown.Action.DELETE_AUTO && pageHash.size == null) throw IllegalArgumentException("cannot create PageHash without size and Action.DELETE_AUTO")
-
-    val existing = pageHashRepository.findKnown(pageHash)
+    val existing = pageHashRepository.findKnown(pageHash.hash)
     if (existing == null) {
-      pageHashRepository.insert(pageHash, getPage(pageHash, 500)?.content)
+      pageHashRepository.insert(pageHash, getPage(pageHash.hash, 500)?.bytes)
     } else {
       pageHashRepository.update(existing.copy(action = pageHash.action))
     }
-  }
-
-  fun update(pageHash: PageHashKnown) {
-    if (pageHash.action == PageHashKnown.Action.DELETE_AUTO && pageHash.size == null) throw IllegalArgumentException("cannot create PageHash without size and Action.DELETE_AUTO")
   }
 }

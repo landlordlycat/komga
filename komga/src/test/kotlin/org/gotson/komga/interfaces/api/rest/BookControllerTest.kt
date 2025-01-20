@@ -4,10 +4,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.groups.Tuple.tuple
 import org.gotson.komga.domain.model.Author
 import org.gotson.komga.domain.model.BookPage
+import org.gotson.komga.domain.model.Dimension
 import org.gotson.komga.domain.model.KomgaUser
 import org.gotson.komga.domain.model.MarkSelectedPreference
 import org.gotson.komga.domain.model.Media
-import org.gotson.komga.domain.model.ROLE_ADMIN
 import org.gotson.komga.domain.model.ThumbnailBook
 import org.gotson.komga.domain.model.makeBook
 import org.gotson.komga.domain.model.makeLibrary
@@ -24,7 +24,6 @@ import org.gotson.komga.domain.service.KomgaUserLifecycle
 import org.gotson.komga.domain.service.LibraryLifecycle
 import org.gotson.komga.domain.service.SeriesLifecycle
 import org.gotson.komga.infrastructure.security.KomgaPrincipal
-import org.hamcrest.Matchers
 import org.hamcrest.Matchers.containsString
 import org.hamcrest.core.IsNull
 import org.junit.jupiter.api.AfterAll
@@ -32,7 +31,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
@@ -42,7 +40,6 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user
-import org.springframework.test.context.junit.jupiter.SpringExtension
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.MockMvcResultMatchersDsl
 import org.springframework.test.web.servlet.delete
@@ -56,7 +53,6 @@ import java.nio.file.Files
 import java.time.LocalDate
 import kotlin.random.Random
 
-@ExtendWith(SpringExtension::class)
 @SpringBootTest
 @AutoConfigureMockMvc(printOnlyOnFailure = false)
 class BookControllerTest(
@@ -73,10 +69,9 @@ class BookControllerTest(
   @Autowired private val userLifecycle: KomgaUserLifecycle,
   @Autowired private val mockMvc: MockMvc,
 ) {
-
   private val library = makeLibrary(id = "1")
-  private val user = KomgaUser("user@example.org", "", false, id = "1")
-  private val user2 = KomgaUser("user2@example.org", "", false, id = "2")
+  private val user = KomgaUser("user@example.org", "", id = "1")
+  private val user2 = KomgaUser("user2@example.org", "", id = "2")
 
   @BeforeAll
   fun `setup library`() {
@@ -121,7 +116,8 @@ class BookControllerTest(
         }
       }
 
-      mockMvc.get("/api/v1/books")
+      mockMvc
+        .get("/api/v1/books")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(1) }
@@ -181,7 +177,8 @@ class BookControllerTest(
       mockMvc.get("/api/v1/books/${book15.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/api/v1/books/${book.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/api/v1/books?sort=metadata.title")
+      mockMvc
+        .get("/api/v1/books?sort=metadata.title")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(2) }
@@ -239,7 +236,8 @@ class BookControllerTest(
       mockMvc.get("/api/v1/books/${book10.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/api/v1/books/${book15.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/api/v1/books?sort=metadata.title")
+      mockMvc
+        .get("/api/v1/books?sort=metadata.title")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(2) }
@@ -297,7 +295,8 @@ class BookControllerTest(
       mockMvc.get("/api/v1/books/${bookAdult.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/api/v1/books/${book.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/api/v1/books?sort=metadata.title")
+      mockMvc
+        .get("/api/v1/books?sort=metadata.title")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(2) }
@@ -355,7 +354,8 @@ class BookControllerTest(
       mockMvc.get("/api/v1/books/${bookAdult.id}").andExpect { status { isOk() } }
       mockMvc.get("/api/v1/books/${book.id}").andExpect { status { isOk() } }
 
-      mockMvc.get("/api/v1/books?sort=metadata.title")
+      mockMvc
+        .get("/api/v1/books?sort=metadata.title")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(2) }
@@ -413,7 +413,8 @@ class BookControllerTest(
       mockMvc.get("/api/v1/books/${bookAdult.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/api/v1/books/${book.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/api/v1/books?sort=metadata.title")
+      mockMvc
+        .get("/api/v1/books?sort=metadata.title")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(2) }
@@ -438,7 +439,8 @@ class BookControllerTest(
 
       mockMvc.get("/api/v1/books/${bookTeen16.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/api/v1/books")
+      mockMvc
+        .get("/api/v1/books")
         .andExpect {
           status { isOk() }
           jsonPath("$.content.length()") { value(0) }
@@ -460,7 +462,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect { status { isForbidden() } }
     }
 
@@ -476,7 +479,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/thumbnail")
+      mockMvc
+        .get("/api/v1/books/${book.id}/thumbnail")
         .andExpect { status { isForbidden() } }
     }
 
@@ -492,7 +496,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/file")
+      mockMvc
+        .get("/api/v1/books/${book.id}/file")
         .andExpect { status { isForbidden() } }
     }
 
@@ -508,7 +513,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/pages")
+      mockMvc
+        .get("/api/v1/books/${book.id}/pages")
         .andExpect { status { isForbidden() } }
     }
 
@@ -524,7 +530,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/pages/1")
+      mockMvc
+        .get("/api/v1/books/${book.id}/pages/1")
         .andExpect { status { isForbidden() } }
     }
   }
@@ -543,7 +550,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/pages/1")
+      mockMvc
+        .get("/api/v1/books/${book.id}/pages/1")
         .andExpect { status { isForbidden() } }
     }
 
@@ -559,7 +567,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/file")
+      mockMvc
+        .get("/api/v1/books/${book.id}/file")
         .andExpect { status { isForbidden() } }
     }
   }
@@ -578,7 +587,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/thumbnail")
+      mockMvc
+        .get("/api/v1/books/${book.id}/thumbnail")
         .andExpect { status { isNotFound() } }
     }
 
@@ -594,7 +604,8 @@ class BookControllerTest(
 
       val book = bookRepository.findAll().first()
 
-      mockMvc.get("/api/v1/books/${book.id}/file")
+      mockMvc
+        .get("/api/v1/books/${book.id}/file")
         .andExpect { status { isNotFound() } }
     }
 
@@ -614,7 +625,8 @@ class BookControllerTest(
         mediaRepository.update(it.copy(status = status))
       }
 
-      mockMvc.get("/api/v1/books/${book.id}/pages")
+      mockMvc
+        .get("/api/v1/books/${book.id}/pages")
         .andExpect { status { isNotFound() } }
     }
 
@@ -634,7 +646,8 @@ class BookControllerTest(
         mediaRepository.update(it.copy(status = status))
       }
 
-      mockMvc.get("/api/v1/books/${book.id}/pages/1")
+      mockMvc
+        .get("/api/v1/books/${book.id}/pages/1")
         .andExpect { status { isNotFound() } }
     }
   }
@@ -660,13 +673,13 @@ class BookControllerTest(
       )
     }
 
-    mockMvc.get("/api/v1/books/${book.id}/pages/$page")
+    mockMvc
+      .get("/api/v1/books/${book.id}/pages/$page")
       .andExpect { status { isBadRequest() } }
   }
 
   @Nested
   inner class Siblings {
-
     @Test
     @WithMockCustomUser
     fun `given series with multiple books when getting siblings then it is returned or not found`() {
@@ -681,31 +694,37 @@ class BookControllerTest(
         }
       }
 
-      mockMvc.get("/api/v1/books/${book1.id}/previous")
+      mockMvc
+        .get("/api/v1/books/${book1.id}/previous")
         .andExpect { status { isNotFound() } }
-      mockMvc.get("/api/v1/books/${book1.id}/next")
+      mockMvc
+        .get("/api/v1/books/${book1.id}/next")
         .andExpect {
           status { isOk() }
           jsonPath("$.name") { value("2") }
         }
 
-      mockMvc.get("/api/v1/books/${book2.id}/previous")
+      mockMvc
+        .get("/api/v1/books/${book2.id}/previous")
         .andExpect {
           status { isOk() }
           jsonPath("$.name") { value("1") }
         }
-      mockMvc.get("/api/v1/books/${book2.id}/next")
+      mockMvc
+        .get("/api/v1/books/${book2.id}/next")
         .andExpect {
           status { isOk() }
           jsonPath("$.name") { value("3") }
         }
 
-      mockMvc.get("/api/v1/books/${book3.id}/previous")
+      mockMvc
+        .get("/api/v1/books/${book3.id}/previous")
         .andExpect {
           status { isOk() }
           jsonPath("$.name") { value("2") }
         }
-      mockMvc.get("/api/v1/books/${book3.id}/next")
+      mockMvc
+        .get("/api/v1/books/${book3.id}/next")
         .andExpect { status { isNotFound() } }
     }
   }
@@ -715,12 +734,13 @@ class BookControllerTest(
     @Test
     @WithMockCustomUser
     fun `given regular user when getting books then full url is hidden`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).let { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1.cbr", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).let { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1.cbr", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       val book = bookRepository.findAll().first()
 
@@ -729,16 +749,20 @@ class BookControllerTest(
         jsonPath("$.content[0].url") { value("1.cbr") }
       }
 
-      mockMvc.get("/api/v1/books")
+      mockMvc
+        .get("/api/v1/books")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/books/latest")
+      mockMvc
+        .get("/api/v1/books/latest")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/series/${createdSeries.id}/books")
+      mockMvc
+        .get("/api/v1/series/${createdSeries.id}/books")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect {
           status { isOk() }
           jsonPath("$.url") { value("1.cbr") }
@@ -746,35 +770,40 @@ class BookControllerTest(
     }
 
     @Test
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given admin user when getting books then full url is available`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).let { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1.cbr", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).let { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1.cbr", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       val book = bookRepository.findAll().first()
 
       val validation: MockMvcResultMatchersDsl.() -> Unit = {
         status { isOk() }
-        jsonPath("$.content[0].url") { value(Matchers.containsString("1.cbr")) }
+        jsonPath("$.content[0].url") { value(containsString("1.cbr")) }
       }
 
-      mockMvc.get("/api/v1/books")
+      mockMvc
+        .get("/api/v1/books")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/books/latest")
+      mockMvc
+        .get("/api/v1/books/latest")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/series/${createdSeries.id}/books")
+      mockMvc
+        .get("/api/v1/series/${createdSeries.id}/books")
         .andExpect(validation)
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect {
           status { isOk() }
-          jsonPath("$.url") { value(Matchers.containsString("1.cbr")) }
+          jsonPath("$.url") { value(containsString("1.cbr")) }
         }
     }
   }
@@ -797,22 +826,29 @@ class BookControllerTest(
           thumbnail = Random.nextBytes(100),
           bookId = book.id,
           type = ThumbnailBook.Type.GENERATED,
+          fileSize = 0,
+          mediaType = "",
+          dimension = Dimension(0, 0),
         ),
         MarkSelectedPreference.YES,
       )
 
       val url = "/api/v1/books/${book.id}/thumbnail"
 
-      val response = mockMvc.get(url)
-        .andReturn().response
+      val response =
+        mockMvc
+          .get(url)
+          .andReturn()
+          .response
 
-      mockMvc.get(url) {
-        headers {
-          ifNoneMatch = listOf(response.getHeader(HttpHeaders.ETAG)!!)
+      mockMvc
+        .get(url) {
+          headers {
+            ifNoneMatch = listOf(response.getHeader(HttpHeaders.ETAG)!!)
+          }
+        }.andExpect {
+          status { isNotModified() }
         }
-      }.andExpect {
-        status { isNotModified() }
-      }
     }
 
     @Test
@@ -829,16 +865,21 @@ class BookControllerTest(
 
       val url = "/api/v1/books/${book.id}/pages/1"
 
-      val lastModified = mockMvc.get(url)
-        .andReturn().response.getHeader(HttpHeaders.LAST_MODIFIED)
+      val lastModified =
+        mockMvc
+          .get(url)
+          .andReturn()
+          .response
+          .getHeader(HttpHeaders.LAST_MODIFIED)
 
-      mockMvc.get(url) {
-        headers {
-          set(HttpHeaders.IF_MODIFIED_SINCE, lastModified!!)
+      mockMvc
+        .get(url) {
+          headers {
+            set(HttpHeaders.IF_MODIFIED_SINCE, lastModified!!)
+          }
+        }.andExpect {
+          status { isNotModified() }
         }
-      }.andExpect {
-        status { isNotModified() }
-      }
     }
 
     @Test
@@ -857,6 +898,9 @@ class BookControllerTest(
           thumbnail = Random.nextBytes(1),
           bookId = book.id,
           type = ThumbnailBook.Type.GENERATED,
+          fileSize = 0,
+          mediaType = "",
+          dimension = Dimension(0, 0),
         ),
         MarkSelectedPreference.YES,
       )
@@ -871,17 +915,21 @@ class BookControllerTest(
           thumbnail = Random.nextBytes(1),
           bookId = book.id,
           type = ThumbnailBook.Type.GENERATED,
+          fileSize = 0,
+          mediaType = "",
+          dimension = Dimension(0, 0),
         ),
         MarkSelectedPreference.YES,
       )
 
-      mockMvc.get(url) {
-        headers {
-          ifNoneMatch = listOf(response.getHeader(HttpHeaders.ETAG)!!)
+      mockMvc
+        .get(url) {
+          headers {
+            ifNoneMatch = listOf(response.getHeader(HttpHeaders.ETAG)!!)
+          }
+        }.andExpect {
+          status { isOk() }
         }
-      }.andExpect {
-        status { isOk() }
-      }
     }
   }
 
@@ -890,12 +938,13 @@ class BookControllerTest(
     @Test
     @WithMockCustomUser
     fun `given non-admin user when updating metadata then raise forbidden`() {
-      mockMvc.patch("/api/v1/books/1/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = "{}"
-      }.andExpect {
-        status { isForbidden() }
-      }
+      mockMvc
+        .patch("/api/v1/books/1/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = "{}"
+        }.andExpect {
+          status { isForbidden() }
+        }
     }
 
     @ParameterizedTest
@@ -908,18 +957,19 @@ class BookControllerTest(
         """{"isbn":"978-123-456-789-6"}""", // invalid check digit
       ],
     )
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given invalid json when updating metadata then raise validation error`(jsonString: String) {
-      mockMvc.patch("/api/v1/books/1/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isBadRequest() }
-      }
+      mockMvc
+        .patch("/api/v1/books/1/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isBadRequest() }
+        }
     }
 
     @Test
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given valid json when updating metadata then fields are updated`() {
       makeSeries(name = "series", libraryId = library.id).let { series ->
         seriesLifecycle.createSeries(series).also { created ->
@@ -930,7 +980,9 @@ class BookControllerTest(
 
       val bookId = bookRepository.findAll().first().id
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "title":"newTitle",
           "titleLock":true,
@@ -958,14 +1010,15 @@ class BookControllerTest(
           "isbn":"978-161-729-045-9abc xxxoefj",
           "isbnLock":true
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/$bookId/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/$bookId/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
       val metadata = bookMetadataRepository.findById(bookId)
       with(metadata) {
@@ -996,7 +1049,7 @@ class BookControllerTest(
     }
 
     @Test
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given json with blank fields when updating metadata then fields with blanks are unset`() {
       makeSeries(name = "series", libraryId = library.id).let { series ->
         seriesLifecycle.createSeries(series).also { created ->
@@ -1007,27 +1060,31 @@ class BookControllerTest(
 
       val bookId = bookRepository.findAll().first().id
       bookMetadataRepository.findById(bookId).let { metadata ->
-        val updated = metadata.copy(
-          summary = "summary",
-          isbn = "9781617290459",
-        )
+        val updated =
+          metadata.copy(
+            summary = "summary",
+            isbn = "9781617290459",
+          )
 
         bookMetadataRepository.update(updated)
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "summary":"",
           "isbn":""
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/$bookId/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/$bookId/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
       val updatedMetadata = bookMetadataRepository.findById(bookId)
       with(updatedMetadata) {
@@ -1037,7 +1094,7 @@ class BookControllerTest(
     }
 
     @Test
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given json with null fields when updating metadata then fields with null are unset`() {
       val testDate = LocalDate.of(2020, 1, 1)
 
@@ -1050,13 +1107,14 @@ class BookControllerTest(
 
       val bookId = bookRepository.findAll().first().id
       bookMetadataRepository.findById(bookId).let { metadata ->
-        val updated = metadata.copy(
-          authors = metadata.authors.toMutableList().also { it.add(Author("Author", "role")) },
-          releaseDate = testDate,
-          tags = setOf("tag"),
-          summary = "summary",
-          isbn = "9781617290459",
-        )
+        val updated =
+          metadata.copy(
+            authors = metadata.authors.toMutableList().also { it.add(Author("Author", "role")) },
+            releaseDate = testDate,
+            tags = setOf("tag"),
+            summary = "summary",
+            isbn = "9781617290459",
+          )
 
         bookMetadataRepository.update(updated)
       }
@@ -1067,7 +1125,9 @@ class BookControllerTest(
         assertThat(releaseDate).isEqualTo(testDate)
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "authors":null,
           "releaseDate":null,
@@ -1075,14 +1135,15 @@ class BookControllerTest(
           "summary":null,
           "isbn":null
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/$bookId/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/$bookId/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
       val updatedMetadata = bookMetadataRepository.findById(bookId)
       with(updatedMetadata) {
@@ -1095,7 +1156,7 @@ class BookControllerTest(
     }
 
     @Test
-    @WithMockCustomUser(roles = [ROLE_ADMIN])
+    @WithMockCustomUser(roles = ["ADMIN"])
     fun `given json without fields when updating metadata then existing fields are untouched`() {
       val testDate = LocalDate.of(2020, 1, 1)
 
@@ -1108,32 +1169,36 @@ class BookControllerTest(
 
       val bookId = bookRepository.findAll().first().id
       bookMetadataRepository.findById(bookId).let { metadata ->
-        val updated = metadata.copy(
-          authors = metadata.authors.toMutableList().also { it.add(Author("Author", "role")) },
-          releaseDate = testDate,
-          summary = "summary",
-          number = "number",
-          numberLock = true,
-          numberSort = 2F,
-          numberSortLock = true,
-          title = "title",
-          isbn = "9781617290459",
-        )
+        val updated =
+          metadata.copy(
+            authors = metadata.authors.toMutableList().also { it.add(Author("Author", "role")) },
+            releaseDate = testDate,
+            summary = "summary",
+            number = "number",
+            numberLock = true,
+            numberSort = 2F,
+            numberSortLock = true,
+            title = "title",
+            isbn = "9781617290459",
+          )
 
         bookMetadataRepository.update(updated)
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/$bookId/metadata") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/$bookId/metadata") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
       val metadata = bookMetadataRepository.findById(bookId)
       with(metadata) {
@@ -1150,7 +1215,6 @@ class BookControllerTest(
 
   @Nested
   inner class ReadProgress {
-
     @ParameterizedTest
     @ValueSource(
       strings = [
@@ -1161,12 +1225,13 @@ class BookControllerTest(
     )
     @WithMockCustomUser
     fun `given invalid payload when marking book in progress then validation error is returned`(jsonString: String) {
-      mockMvc.patch("/api/v1/books/1/read-progress") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isBadRequest() }
-      }
+      mockMvc
+        .patch("/api/v1/books/1/read-progress") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isBadRequest() }
+        }
     }
 
     @Test
@@ -1185,24 +1250,29 @@ class BookControllerTest(
           media.copy(
             status = Media.Status.READY,
             pages = (1..10).map { BookPage("$it", "image/jpeg") },
+            pageCount = 10,
           ),
         )
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "page": 5
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/${book.id}/read-progress") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/${book.id}/read-progress") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect {
           status { isOk() }
           jsonPath("$.readProgress.page") { value(5) }
@@ -1226,24 +1296,29 @@ class BookControllerTest(
           media.copy(
             status = Media.Status.READY,
             pages = (1..10).map { BookPage("$it", "image/jpeg") },
+            pageCount = 10,
           ),
         )
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "completed": true
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/${book.id}/read-progress") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/${book.id}/read-progress") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect {
           status { isOk() }
           jsonPath("$.readProgress.page") { value(10) }
@@ -1267,31 +1342,37 @@ class BookControllerTest(
           media.copy(
             status = Media.Status.READY,
             pages = (1..10).map { BookPage("$it", "image/jpeg") },
+            pageCount = 10,
           ),
         )
       }
 
-      val jsonString = """
+      // language=JSON
+      val jsonString =
+        """
         {
           "page": 5,
           "completed": false
         }
-      """.trimIndent()
+        """.trimIndent()
 
-      mockMvc.patch("/api/v1/books/${book.id}/read-progress") {
-        contentType = MediaType.APPLICATION_JSON
-        content = jsonString
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .patch("/api/v1/books/${book.id}/read-progress") {
+          contentType = MediaType.APPLICATION_JSON
+          content = jsonString
+        }.andExpect {
+          status { isNoContent() }
+        }
 
-      mockMvc.delete("/api/v1/books/${book.id}/read-progress") {
-        contentType = MediaType.APPLICATION_JSON
-      }.andExpect {
-        status { isNoContent() }
-      }
+      mockMvc
+        .delete("/api/v1/books/${book.id}/read-progress") {
+          contentType = MediaType.APPLICATION_JSON
+        }.andExpect {
+          status { isNoContent() }
+        }
 
-      mockMvc.get("/api/v1/books/${book.id}")
+      mockMvc
+        .get("/api/v1/books/${book.id}")
         .andExpect {
           status { isOk() }
           jsonPath("$.readProgress") { value(IsNull.nullValue()) }
@@ -1318,11 +1399,13 @@ class BookControllerTest(
       )
     }
 
-    val jsonString = """
-        {
-          "completed": true
-        }
-    """.trimIndent()
+    // language=JSON
+    val jsonString =
+      """
+      {
+        "completed": true
+      }
+      """.trimIndent()
 
     mockMvc.perform(
       MockMvcRequestBuilders
@@ -1332,31 +1415,35 @@ class BookControllerTest(
         .content(jsonString),
     )
 
-    mockMvc.perform(
-      MockMvcRequestBuilders
-        .get("/api/v1/books")
-        .with(user(KomgaPrincipal(user)))
-        .contentType(MediaType.APPLICATION_JSON),
-    ).andExpect(
-      jsonPath("$.totalElements").value(2),
-    )
+    mockMvc
+      .perform(
+        MockMvcRequestBuilders
+          .get("/api/v1/books")
+          .with(user(KomgaPrincipal(user)))
+          .contentType(MediaType.APPLICATION_JSON),
+      ).andExpect(
+        jsonPath("$.totalElements").value(2),
+      )
 
-    mockMvc.perform(
-      MockMvcRequestBuilders
-        .get("/api/v1/books")
-        .with(user(KomgaPrincipal(user2)))
-        .contentType(MediaType.APPLICATION_JSON),
-    ).andExpect(
-      jsonPath("$.totalElements").value(2),
-    )
+    mockMvc
+      .perform(
+        MockMvcRequestBuilders
+          .get("/api/v1/books")
+          .with(user(KomgaPrincipal(user2)))
+          .contentType(MediaType.APPLICATION_JSON),
+      ).andExpect(
+        jsonPath("$.totalElements").value(2),
+      )
   }
 
   @Test
   @WithMockCustomUser
   fun `given book with Unicode name when getting book file then attachment name is correct`() {
     val bookName = "アキラ"
-    val tempFile = Files.createTempFile(bookName, ".cbz")
-      .also { it.toFile().deleteOnExit() }
+    val tempFile =
+      Files
+        .createTempFile(bookName, ".cbz")
+        .also { it.toFile().deleteOnExit() }
     makeSeries(name = "series", libraryId = library.id).let { series ->
       seriesLifecycle.createSeries(series).let { created ->
         val books = listOf(makeBook(bookName, libraryId = library.id, url = tempFile.toUri().toURL()))
@@ -1366,7 +1453,8 @@ class BookControllerTest(
 
     val book = bookRepository.findAll().first()
 
-    mockMvc.get("/api/v1/books/${book.id}/file")
+    mockMvc
+      .get("/api/v1/books/${book.id}/file")
       .andExpect {
         status { isOk() }
         header { string("Content-Disposition", containsString(URLEncoder.encode(bookName, StandardCharsets.UTF_8.name()))) }

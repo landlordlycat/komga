@@ -20,10 +20,12 @@
     <multi-select-bar
       v-model="selectedBooks"
       kind="books"
+      :oneshots="selectedOneshots"
       @unselect-all="selectedBooks = []"
       @mark-read="markSelectedBooksRead"
       @mark-unread="markSelectedBooksUnread"
       @add-to-readlist="addToReadList"
+      @add-to-collection="addOneshotsToCollection"
       @edit="editMultipleBooks"
       @bulk-edit="bulkEditMultipleBooks"
       @delete="deleteBooks"
@@ -62,7 +64,7 @@
           @scroll-changed="(percent) => scrollChanged(loaderSeries, percent)"
         >
           <template v-slot:prepend>
-            <div class="title">{{ $t('common.series') }}</div>
+            <div class="title">{{ $tc('common.series', 2) }}</div>
           </template>
           <template v-slot:content>
             <item-browser :items="loaderSeries.items"
@@ -165,7 +167,7 @@ import {
   SERIES_DELETED,
 } from '@/types/events'
 import Vue from 'vue'
-import {SeriesDto} from '@/types/komga-series'
+import {Oneshot, SeriesDto} from '@/types/komga-series'
 import {
   BookSseDto,
   CollectionSseDto,
@@ -177,6 +179,14 @@ import {
 import {throttle} from 'lodash'
 import {PageLoader} from '@/types/pageLoader'
 import {ItemContext} from '@/types/items'
+import {ReadListDto} from '@/types/komga-readlists'
+import {
+  BookSearch,
+  SearchConditionOneShot,
+  SearchConditionSeriesId, SearchOperatorIs,
+  SearchOperatorIsFalse,
+  SeriesSearch,
+} from '@/types/komga-search'
 
 export default Vue.extend({
   name: 'SearchView',
@@ -263,6 +273,9 @@ export default Vue.extend({
         this.loaderCollections?.items.length === 0 &&
         this.loaderReadLists?.items.length === 0
     },
+    selectedOneshots(): boolean {
+      return this.selectedBooks.every(b => b.oneshot)
+    },
   },
   methods: {
     async scrollChanged(loader: PageLoader<any>, percent: number) {
@@ -298,11 +311,21 @@ export default Vue.extend({
         this.reloadResults()
       }
     },
-    singleEditSeries(series: SeriesDto) {
-      this.$store.dispatch('dialogUpdateSeries', series)
+    async singleEditSeries(series: SeriesDto) {
+      if (series.oneshot) {
+        const book = (await this.$komgaBooks.getBooksList({
+          condition: new SearchConditionSeriesId(new SearchOperatorIs(series.id)),
+        } as BookSearch)).content[0]
+        this.$store.dispatch('dialogUpdateOneshots', {series: series, book: book})
+      } else
+        this.$store.dispatch('dialogUpdateSeries', series)
     },
-    singleEditBook(book: BookDto) {
-      this.$store.dispatch('dialogUpdateBooks', book)
+    async singleEditBook(book: BookDto) {
+      if (book.oneshot) {
+        const series = (await this.$komgaSeries.getOneSeries(book.seriesId))
+        this.$store.dispatch('dialogUpdateOneshots', {series: series, book: book})
+      } else
+        this.$store.dispatch('dialogUpdateBooks', book)
     },
     singleEditCollection(collection: CollectionDto) {
       this.$store.dispatch('dialogEditCollection', collection)
@@ -327,16 +350,31 @@ export default Vue.extend({
       ))
     },
     addToCollection() {
-      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedSeries)
+      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedSeries.map(s => s.id))
     },
     addToReadList() {
-      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks)
+      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks.map(b => b.id))
     },
-    editMultipleSeries() {
-      this.$store.dispatch('dialogUpdateSeries', this.selectedSeries)
+    addOneshotsToCollection() {
+      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedBooks.map(b => b.seriesId))
     },
-    editMultipleBooks() {
-      this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
+    async editMultipleSeries() {
+      if (this.selectedSeries.every(s => s.oneshot)) {
+        const books = await Promise.all(this.selectedSeries.map(s => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionSeriesId(new SearchOperatorIs(s.id)),
+        } as BookSearch)))
+        const oneshots = this.selectedSeries.map((s, index) => ({series: s, book: books[index].content[0]} as Oneshot))
+        this.$store.dispatch('dialogUpdateOneshots', oneshots)
+      } else
+        this.$store.dispatch('dialogUpdateSeries', this.selectedSeries)
+    },
+    async editMultipleBooks() {
+      if (this.selectedBooks.every(b => b.oneshot)) {
+        const series = await Promise.all(this.selectedBooks.map(b => this.$komgaSeries.getOneSeries(b.seriesId)))
+        const oneshots = this.selectedBooks.map((b, index) => ({series: series[index], book: b} as Oneshot))
+        this.$store.dispatch('dialogUpdateOneshots', oneshots)
+      } else
+        this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
     },
     bulkEditMultipleBooks() {
       this.$store.dispatch('dialogUpdateBulkBooks', this.selectedBooks)
@@ -368,8 +406,13 @@ export default Vue.extend({
     }, 500),
     setupLoaders(search: string) {
       if (search) {
-        this.loaderSeries = new PageLoader<SeriesDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaSeries.getSeries(undefined, pageable, search))
-        this.loaderBooks = new PageLoader<BookDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaBooks.getBooks(undefined, pageable, search))
+        this.loaderSeries = new PageLoader<SeriesDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaSeries.getSeriesList({
+          fullTextSearch: search,
+          condition: new SearchConditionOneShot(new SearchOperatorIsFalse()),
+        } as SeriesSearch, pageable))
+        this.loaderBooks = new PageLoader<BookDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaBooks.getBooksList({
+          fullTextSearch: search,
+        } as BookSearch, pageable))
         this.loaderCollections = new PageLoader<CollectionDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaCollections.getCollections(undefined, pageable, search))
         this.loaderReadLists = new PageLoader<ReadListDto>({size: this.pageSize}, (pageable: PageRequest) => this.$komgaReadLists.getReadLists(undefined, pageable, search))
       } else {

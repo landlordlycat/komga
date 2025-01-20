@@ -34,10 +34,12 @@
     <multi-select-bar
       v-model="selectedBooks"
       kind="books"
+      :oneshots="selectedOneshots"
       @unselect-all="selectedBooks = []"
       @mark-read="markSelectedBooksRead"
       @mark-unread="markSelectedBooksUnread"
       @add-to-readlist="addToReadList"
+      @add-to-collection="addOneshotsToCollection"
       @edit="editMultipleBooks"
       @bulk-edit="bulkEditMultipleBooks"
       @delete="deleteBooks"
@@ -222,7 +224,7 @@ import {
   SERIES_DELETED,
 } from '@/types/events'
 import Vue from 'vue'
-import {SeriesDto} from '@/types/komga-series'
+import {Oneshot, SeriesDto} from '@/types/komga-series'
 import {LIBRARIES_ALL, LIBRARY_ROUTE} from '@/types/library'
 import {throttle} from 'lodash'
 import {subMonths} from 'date-fns'
@@ -230,6 +232,14 @@ import {BookSseDto, ReadProgressSeriesSseDto, ReadProgressSseDto, SeriesSseDto} 
 import {LibraryDto} from '@/types/komga-libraries'
 import {PageLoader} from '@/types/pageLoader'
 import {ItemContext} from '@/types/items'
+import {
+  BookSearch,
+  SearchConditionAllOfBook,
+  SearchConditionBook,
+  SearchConditionLibraryId,
+  SearchConditionReadStatus, SearchConditionReleaseDate, SearchConditionSeriesId, SearchOperatorAfter,
+  SearchOperatorIs,
+} from '@/types/komga-search'
 
 export default Vue.extend({
   name: 'DashboardView',
@@ -327,6 +337,9 @@ export default Vue.extend({
     individualLibrary(): boolean {
       return this.libraryId !== LIBRARIES_ALL
     },
+    selectedOneshots(): boolean {
+      return this.selectedBooks.every(b => b.oneshot)
+    },
   },
   methods: {
     async scrollChanged(loader: PageLoader<any>, percent: number) {
@@ -360,9 +373,14 @@ export default Vue.extend({
       this.loadAll(this.libraryId, true)
     }, 5000),
     setupLoaders(libraryId: string) {
+      const baseBookConditions = [] as SearchConditionBook[]
+      if (libraryId !== LIBRARIES_ALL) baseBookConditions.push(new SearchConditionLibraryId(new SearchOperatorIs(libraryId)))
+
       this.loaderInProgressBooks = new PageLoader<BookDto>(
         {sort: ['readProgress.readDate,desc']},
-        (pageable: PageRequest) => this.$komgaBooks.getBooks(this.getRequestLibraryId(libraryId), pageable, undefined, undefined, [ReadStatus.IN_PROGRESS]),
+        (pageable: PageRequest) => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionAllOfBook([...baseBookConditions, new SearchConditionReadStatus(new SearchOperatorIs(ReadStatus.IN_PROGRESS))]),
+        } as BookSearch, pageable),
       )
       this.loaderOnDeckBooks = new PageLoader<BookDto>(
         {},
@@ -370,24 +388,30 @@ export default Vue.extend({
       )
       this.loaderLatestBooks = new PageLoader<BookDto>(
         {sort: ['createdDate,desc']},
-        (pageable: PageRequest) => this.$komgaBooks.getBooks(this.getRequestLibraryId(libraryId), pageable),
+        (pageable: PageRequest) => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionAllOfBook(baseBookConditions),
+        } as BookSearch, pageable),
       )
       this.loaderRecentlyReleasedBooks = new PageLoader<BookDto>(
         {sort: ['metadata.releaseDate,desc']},
-        (pageable: PageRequest) => this.$komgaBooks.getBooks(this.getRequestLibraryId(libraryId), pageable, undefined, undefined, undefined, subMonths(new Date(), 1)),
+        (pageable: PageRequest) => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionAllOfBook([...baseBookConditions, new SearchConditionReleaseDate(new SearchOperatorAfter(subMonths(new Date(), 1)))]),
+        } as BookSearch, pageable),
       )
       this.loaderRecentlyReadBooks = new PageLoader<BookDto>(
         {sort: ['readProgress.readDate,desc']},
-        (pageable: PageRequest) => this.$komgaBooks.getBooks(this.getRequestLibraryId(libraryId), pageable, undefined, undefined, [ReadStatus.READ]),
+        (pageable: PageRequest) => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionAllOfBook([...baseBookConditions, new SearchConditionReadStatus(new SearchOperatorIs(ReadStatus.READ))]),
+        } as BookSearch, pageable),
       )
 
       this.loaderNewSeries = new PageLoader<SeriesDto>(
         {},
-        (pageable: PageRequest) => this.$komgaSeries.getNewSeries(this.getRequestLibraryId(libraryId), pageable),
+        (pageable: PageRequest) => this.$komgaSeries.getNewSeries(this.getRequestLibraryId(libraryId), false, pageable),
       )
       this.loaderUpdatedSeries = new PageLoader<SeriesDto>(
         {},
-        (pageable: PageRequest) => this.$komgaSeries.getUpdatedSeries(this.getRequestLibraryId(libraryId), pageable),
+        (pageable: PageRequest) => this.$komgaSeries.getUpdatedSeries(this.getRequestLibraryId(libraryId), false, pageable),
       )
     },
     loadAll(libraryId: string, reload: boolean = false) {
@@ -422,11 +446,21 @@ export default Vue.extend({
         })
       }
     },
-    singleEditSeries(series: SeriesDto) {
-      this.$store.dispatch('dialogUpdateSeries', series)
+    async singleEditSeries(series: SeriesDto) {
+      if (series.oneshot) {
+        let book = (await this.$komgaBooks.getBooksList({
+          condition: new SearchConditionSeriesId(new SearchOperatorIs(series.id)),
+        } as BookSearch)).content[0]
+        this.$store.dispatch('dialogUpdateOneshots', {series: series, book: book})
+      } else
+        this.$store.dispatch('dialogUpdateSeries', series)
     },
-    singleEditBook(book: BookDto) {
-      this.$store.dispatch('dialogUpdateBooks', book)
+    async singleEditBook(book: BookDto) {
+      if (book.oneshot) {
+        const series = (await this.$komgaSeries.getOneSeries(book.seriesId))
+        this.$store.dispatch('dialogUpdateOneshots', {series: series, book: book})
+      } else
+        this.$store.dispatch('dialogUpdateBooks', book)
     },
     async markSelectedSeriesRead() {
       await Promise.all(this.selectedSeries.map(s =>
@@ -441,14 +475,30 @@ export default Vue.extend({
       this.selectedSeries = []
     },
     addToCollection() {
-      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedSeries)
+      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedSeries.map(s => s.id))
       this.selectedSeries = []
     },
-    editMultipleSeries() {
-      this.$store.dispatch('dialogUpdateSeries', this.selectedSeries)
+    addOneshotsToCollection() {
+      this.$store.dispatch('dialogAddSeriesToCollection', this.selectedBooks.map(b => b.seriesId))
+      this.selectedBooks = []
     },
-    editMultipleBooks() {
-      this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
+    async editMultipleSeries() {
+      if (this.selectedSeries.every(s => s.oneshot)) {
+        const books = await Promise.all(this.selectedSeries.map(s => this.$komgaBooks.getBooksList({
+          condition: new SearchConditionSeriesId(new SearchOperatorIs(s.id)),
+        } as BookSearch)))
+        const oneshots = this.selectedSeries.map((s, index) => ({series: s, book: books[index].content[0]} as Oneshot))
+        this.$store.dispatch('dialogUpdateOneshots', oneshots)
+      } else
+        this.$store.dispatch('dialogUpdateSeries', this.selectedSeries)
+    },
+    async editMultipleBooks() {
+      if (this.selectedBooks.every(b => b.oneshot)) {
+        const series = await Promise.all(this.selectedBooks.map(b => this.$komgaSeries.getOneSeries(b.seriesId)))
+        const oneshots = this.selectedBooks.map((b, index) => ({series: series[index], book: b} as Oneshot))
+        this.$store.dispatch('dialogUpdateOneshots', oneshots)
+      } else
+        this.$store.dispatch('dialogUpdateBooks', this.selectedBooks)
     },
     deleteSeries() {
       this.$store.dispatch('dialogDeleteSeries', this.selectedSeries)
@@ -460,7 +510,7 @@ export default Vue.extend({
       this.$store.dispatch('dialogUpdateBulkBooks', this.selectedBooks)
     },
     addToReadList() {
-      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks)
+      this.$store.dispatch('dialogAddBooksToReadList', this.selectedBooks.map(b => b.id))
       this.selectedBooks = []
     },
     async markSelectedBooksRead() {

@@ -1,7 +1,8 @@
 package org.gotson.komga.application.tasks
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.micrometer.core.instrument.MeterRegistry
-import mu.KotlinLogging
+import org.gotson.komga.domain.model.BookAction
 import org.gotson.komga.domain.persistence.BookRepository
 import org.gotson.komga.domain.persistence.LibraryRepository
 import org.gotson.komga.domain.persistence.SeriesRepository
@@ -15,12 +16,10 @@ import org.gotson.komga.domain.service.LocalArtworkLifecycle
 import org.gotson.komga.domain.service.PageHashLifecycle
 import org.gotson.komga.domain.service.SeriesLifecycle
 import org.gotson.komga.domain.service.SeriesMetadataLifecycle
-import org.gotson.komga.infrastructure.jms.QUEUE_FACTORY
-import org.gotson.komga.infrastructure.jms.QUEUE_TASKS
+import org.gotson.komga.domain.service.ThumbnailLifecycle
 import org.gotson.komga.infrastructure.search.SearchIndexLifecycle
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_EXECUTION
 import org.gotson.komga.interfaces.scheduler.METER_TASKS_FAILURE
-import org.springframework.jms.annotation.JmsListener
 import org.springframework.stereotype.Service
 import java.nio.file.Paths
 import kotlin.time.measureTime
@@ -45,10 +44,9 @@ class TaskHandler(
   private val bookPageEditor: BookPageEditor,
   private val searchIndexLifecycle: SearchIndexLifecycle,
   private val pageHashLifecycle: PageHashLifecycle,
+  private val thumbnailLifecycle: ThumbnailLifecycle,
   private val meterRegistry: MeterRegistry,
 ) {
-
-  @JmsListener(destination = QUEUE_TASKS, containerFactory = QUEUE_FACTORY, concurrency = "#{@komgaProperties.taskConsumers}-#{@komgaProperties.taskConsumersMax}")
   fun handleTask(task: Task) {
     logger.info { "Executing task: $task" }
     try {
@@ -56,34 +54,29 @@ class TaskHandler(
         when (task) {
           is Task.ScanLibrary ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
-              libraryContentLifecycle.scanRootFolder(library)
+              libraryContentLifecycle.scanRootFolder(library, task.scanDeep)
               taskEmitter.analyzeUnknownAndOutdatedBooks(library)
               taskEmitter.repairExtensions(library, LOW_PRIORITY)
               taskEmitter.findBooksToConvert(library, LOWEST_PRIORITY)
               taskEmitter.findBooksWithMissingPageHash(library, LOWEST_PRIORITY)
               taskEmitter.findDuplicatePagesToDelete(library, LOWEST_PRIORITY)
               taskEmitter.hashBooksWithoutHash(library)
+              taskEmitter.hashBooksWithoutHashKoreader(library)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
 
           is Task.FindBooksToConvert ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
-              bookConverter.getConvertibleBooks(library).forEach {
-                taskEmitter.convertBookToCbz(it, task.priority + 1)
-              }
+              taskEmitter.convertBookToCbz(bookConverter.getConvertibleBooks(library), task.priority + 1)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
 
           is Task.FindBooksWithMissingPageHash ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
-              pageHashLifecycle.getBookAndSeriesIdsWithMissingPageHash(library).forEach {
-                taskEmitter.hashBookPages(it.first, it.second, task.priority + 1)
-              }
+              taskEmitter.hashBookPages(pageHashLifecycle.getBookIdsWithMissingPageHash(library), task.priority + 1)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
 
           is Task.FindDuplicatePagesToDelete ->
             libraryRepository.findByIdOrNull(task.libraryId)?.let { library ->
-              pageHashLifecycle.getBookPagesToDeleteAutomatically(library).forEach { (bookId, pages) ->
-                taskEmitter.removeDuplicatePages(bookId, pages, task.priority + 1)
-              }
+              taskEmitter.removeDuplicatePages(pageHashLifecycle.getBookPagesToDeleteAutomatically(library), task.priority + 1)
             } ?: logger.warn { "Cannot execute task $task: Library does not exist" }
 
           is Task.EmptyTrash ->
@@ -93,10 +86,9 @@ class TaskHandler(
 
           is Task.AnalyzeBook ->
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
-              if (bookLifecycle.analyzeAndPersist(book)) {
-                taskEmitter.generateBookThumbnail(book, priority = task.priority + 1)
-                taskEmitter.refreshBookMetadata(book, priority = task.priority + 1)
-              }
+              val actions = bookLifecycle.analyzeAndPersist(book)
+              if (actions.contains(BookAction.GENERATE_THUMBNAIL)) taskEmitter.generateBookThumbnail(book.id, priority = task.priority + 1)
+              if (actions.contains(BookAction.REFRESH_METADATA)) taskEmitter.refreshBookMetadata(book, priority = task.priority + 1)
             } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
 
           is Task.GenerateBookThumbnail ->
@@ -149,12 +141,19 @@ class TaskHandler(
 
           is Task.RemoveHashedPages ->
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
-              bookPageEditor.removeHashedPages(book, task.pages)
+              if (bookPageEditor.removeHashedPages(book, task.pages) == BookAction.GENERATE_THUMBNAIL) {
+                taskEmitter.generateBookThumbnail(book.id, priority = task.priority + 1)
+              }
             } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
 
           is Task.HashBook ->
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
               bookLifecycle.hashAndPersist(book)
+            } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
+
+          is Task.HashBookKoreader ->
+            bookRepository.findByIdOrNull(task.bookId)?.let { book ->
+              bookLifecycle.hashKoreaderAndPersist(book)
             } ?: logger.warn { "Cannot execute task $task: Book does not exist" }
 
           is Task.HashBookPages ->
@@ -164,9 +163,14 @@ class TaskHandler(
 
           is Task.RebuildIndex -> searchIndexLifecycle.rebuildIndex(task.entities)
 
+          is Task.UpgradeIndex -> searchIndexLifecycle.upgradeIndex()
+
           is Task.DeleteBook -> {
             bookRepository.findByIdOrNull(task.bookId)?.let { book ->
-              bookLifecycle.deleteBookFiles(book)
+              if (book.oneshot)
+                seriesLifecycle.deleteSeriesFiles(seriesRepository.findByIdOrNull(book.seriesId)!!)
+              else
+                bookLifecycle.deleteBookFiles(book)
             }
           }
 
@@ -174,6 +178,15 @@ class TaskHandler(
             seriesRepository.findByIdOrNull(task.seriesId)?.let { series ->
               seriesLifecycle.deleteSeriesFiles(series)
             }
+          }
+
+          is Task.FixThumbnailsWithoutMetadata -> {
+            if (thumbnailLifecycle.fixThumbnailsMetadata())
+              taskEmitter.fixThumbnailsWithoutMetadata(LOWEST_PRIORITY)
+          }
+
+          is Task.FindBookThumbnailsToRegenerate -> {
+            taskEmitter.generateBookThumbnail(bookLifecycle.findBookThumbnailsToRegenerate(task.forBiggerResultOnly), task.priority)
           }
         }
       }.also {

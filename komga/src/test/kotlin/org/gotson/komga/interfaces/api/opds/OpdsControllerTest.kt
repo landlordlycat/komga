@@ -22,16 +22,13 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.test.context.junit.jupiter.SpringExtension
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import java.time.LocalDateTime
 
-@ExtendWith(SpringExtension::class)
 @SpringBootTest
 @AutoConfigureMockMvc(printOnlyOnFailure = false)
 class OpdsControllerTest(
@@ -46,10 +43,9 @@ class OpdsControllerTest(
   @Autowired private val userLifecycle: KomgaUserLifecycle,
   @Autowired private val mockMvc: MockMvc,
 ) {
-
   private val library = makeLibrary(id = "1")
-  private val user = KomgaUser("user@example.org", "", false, id = "1")
-  private val user2 = KomgaUser("user2@example.org", "", false, id = "2")
+  private val user = KomgaUser("user@example.org", "", id = "1")
+  private val user2 = KomgaUser("user2@example.org", "", id = "2")
 
   @BeforeAll
   fun `setup library`() {
@@ -78,12 +74,13 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser(sharedAllLibraries = false, sharedLibraries = ["1"])
     fun `given user with access to a single library when getting series then only gets series from this library`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).let { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).let { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       val otherLibrary = makeLibrary("other")
       libraryRepository.insert(otherLibrary)
@@ -94,7 +91,8 @@ class OpdsControllerTest(
         }
       }
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry/id") {
@@ -110,49 +108,54 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser(allowAgeUnder = 10)
     fun `given user only allowed content with specific age rating when getting series then only gets series that satisfies this criteria`() {
-      val series10 = makeSeries(name = "series_10", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series10 =
+        makeSeries(name = "series_10", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 10))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 10))
-        }
-      }
 
-      val series5 = makeSeries(name = "series_5", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series5 =
+        makeSeries(name = "series_5", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 5))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 5))
-        }
-      }
 
-      val series15 = makeSeries(name = "series_15", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series15 =
+        makeSeries(name = "series_15", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 15))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 15))
-        }
-      }
 
-      val series = makeSeries(name = "series_no", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series =
+        makeSeries(name = "series_no", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       mockMvc.get("/opds/v1.2/series/${series5.id}").andExpect { status { isOk() } }
       mockMvc.get("/opds/v1.2/series/${series10.id}").andExpect { status { isOk() } }
       mockMvc.get("/opds/v1.2/series/${series15.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/opds/v1.2/series/${series.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry/id") { nodeCount(2) }
@@ -164,49 +167,54 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser(excludeAgeOver = 16)
     fun `given user disallowed content with specific age rating when getting series then only gets series that satisfies this criteria`() {
-      val series10 = makeSeries(name = "series_10", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series10 =
+        makeSeries(name = "series_10", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 10))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 10))
-        }
-      }
 
-      val series18 = makeSeries(name = "series_18", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series18 =
+        makeSeries(name = "series_18", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 18))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 18))
-        }
-      }
 
-      val series16 = makeSeries(name = "series_16", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series16 =
+        makeSeries(name = "series_16", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
+          seriesMetadataRepository.findById(series.id).let {
+            seriesMetadataRepository.update(it.copy(ageRating = 16))
+          }
         }
-        seriesMetadataRepository.findById(series.id).let {
-          seriesMetadataRepository.update(it.copy(ageRating = 16))
-        }
-      }
 
-      val series = makeSeries(name = "series_no", libraryId = library.id).also { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val series =
+        makeSeries(name = "series_no", libraryId = library.id).also { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       mockMvc.get("/opds/v1.2/series/${series.id}").andExpect { status { isOk() } }
       mockMvc.get("/opds/v1.2/series/${series10.id}").andExpect { status { isOk() } }
       mockMvc.get("/opds/v1.2/series/${series16.id}").andExpect { status { isForbidden() } }
       mockMvc.get("/opds/v1.2/series/${series18.id}").andExpect { status { isForbidden() } }
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry/id") { nodeCount(2) }
@@ -227,7 +235,8 @@ class OpdsControllerTest(
       }
       seriesLifecycle.createSeries(makeSeries("Beta", libraryId = library.id))
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry[1]/title") { string("TheAlpha") }
@@ -244,7 +253,8 @@ class OpdsControllerTest(
           seriesLifecycle.createSeries(it)
         }
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry[1]/title") { string("a") }
@@ -265,7 +275,8 @@ class OpdsControllerTest(
       }
       seriesLifecycle.createSeries(makeSeries("Beta", libraryId = library.id))
 
-      mockMvc.get("/opds/v1.2/series")
+      mockMvc
+        .get("/opds/v1.2/series")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry") { nodeCount(1) }
@@ -279,12 +290,13 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser
     fun `given books with unordered index when requesting via opds then books are ordered`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).let { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).let { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       val addedBook = makeBook("2", libraryId = library.id)
       seriesLifecycle.addBooks(createdSeries, listOf(addedBook))
@@ -296,7 +308,8 @@ class OpdsControllerTest(
         }
       }
 
-      mockMvc.get("/opds/v1.2/series/${createdSeries.id}")
+      mockMvc
+        .get("/opds/v1.2/series/${createdSeries.id}")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry[1]/title") { string("1") }
@@ -311,12 +324,13 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser
     fun `given books not ready when requesting via opds then no books are returned`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).let { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).let { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       bookRepository.findAll().forEach {
         mediaRepository.findById(it.id).let { media ->
@@ -328,7 +342,8 @@ class OpdsControllerTest(
       seriesLifecycle.addBooks(createdSeries, listOf(addedBook))
       seriesLifecycle.sortBooks(createdSeries)
 
-      mockMvc.get("/opds/v1.2/series/${createdSeries.id}")
+      mockMvc
+        .get("/opds/v1.2/series/${createdSeries.id}")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry") { nodeCount(2) }
@@ -340,12 +355,13 @@ class OpdsControllerTest(
     @Test
     @WithMockCustomUser
     fun `given deleted ready books when requesting via opds then no books are returned`() {
-      val createdSeries = makeSeries(name = "series", libraryId = library.id).let { series ->
-        seriesLifecycle.createSeries(series).also { created ->
-          val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
-          seriesLifecycle.addBooks(created, books)
+      val createdSeries =
+        makeSeries(name = "series", libraryId = library.id).let { series ->
+          seriesLifecycle.createSeries(series).also { created ->
+            val books = listOf(makeBook("1", libraryId = library.id), makeBook("3", libraryId = library.id))
+            seriesLifecycle.addBooks(created, books)
+          }
         }
-      }
 
       val addedBook = makeBook("2", libraryId = library.id)
       seriesLifecycle.addBooks(createdSeries, listOf(addedBook))
@@ -359,7 +375,8 @@ class OpdsControllerTest(
           bookRepository.update(it.copy(deletedDate = LocalDateTime.now()))
       }
 
-      mockMvc.get("/opds/v1.2/series/${createdSeries.id}")
+      mockMvc
+        .get("/opds/v1.2/series/${createdSeries.id}")
         .andExpect {
           status { isOk() }
           xpath("/feed/entry") { nodeCount(2) }

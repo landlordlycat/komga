@@ -49,13 +49,24 @@
 
         <v-row>
           <v-col>
+            <v-checkbox v-model="rememberMe"
+                        :label="$t('common.remember-me')"
+                        hide-details
+                        class="mt-0"
+            />
+          </v-col>
+        </v-row>
+
+        <v-row>
+          <v-col cols="auto">
             <v-btn color="primary"
                    type="submit"
                    :disabled="unclaimed"
             >{{ $t('login.login') }}
             </v-btn>
+          </v-col>
+          <v-col cols="auto">
             <v-btn v-if="unclaimed"
-                   class="mx-4"
                    color="primary"
                    @click="claim"
             >{{ $t('login.create_user_account') }}
@@ -63,7 +74,7 @@
           </v-col>
         </v-row>
 
-        <v-divider class="my-4"/>
+        <v-divider class="my-4 mt-2"/>
 
         <v-row>
           <v-col
@@ -168,7 +179,7 @@ export default Vue.extend({
         default:
           l = 300
       }
-      return l / (this.unclaimed ? 2 : 1)
+      return l
     },
 
     locale: {
@@ -179,6 +190,15 @@ export default Vue.extend({
         if (this.$i18n.availableLocales.includes(locale)) {
           this.$store.commit('setLocale', locale)
         }
+      },
+    },
+
+    rememberMe: {
+      get: function (): boolean {
+        return this.$store.state.persistedState.rememberMe
+      },
+      set: function (value: boolean): void {
+        this.$store.commit('setRememberMe', value)
       },
     },
 
@@ -223,8 +243,8 @@ export default Vue.extend({
       const url = `${urls.originNoSlash}/oauth2/authorization/${provider.registrationId}`
       const height = 600
       const width = 600
-      const y = window.top.outerHeight / 2 + window.top.screenY - (height / 2)
-      const x = window.top.outerWidth / 2 + window.top.screenX - (width / 2)
+      const y = window.top!.outerHeight / 2 + window.top!.screenY - (height / 2)
+      const x = window.top!.outerWidth / 2 + window.top!.screenX - (width / 2)
       window.open(url, 'oauth2Login',
         `toolbar=no,
         location=off,
@@ -259,6 +279,7 @@ export default Vue.extend({
             {
               login: this.form.login,
               password: this.form.password,
+              rememberMe: this.rememberMe,
             })
 
           await this.$store.dispatch('getLibraries')
